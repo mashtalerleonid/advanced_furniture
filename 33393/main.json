@@ -1,0 +1,47 @@
+{
+    "model": {
+        "title": "Parametric window",
+        "modelsForReplace": []
+    },
+    "geometries": [
+        {
+            "geometryIndex": 0,
+            "title": "Handles",
+            "modelsForReplace": [
+                {
+                    "id": "33447",
+                    "title": "Handle 1",
+                    "text": "Round"
+                },
+                {
+                    "id": "33448",
+                    "title": "Handle 2",
+                    "text": "Square"
+                }
+            ],
+            "defaultId": "33447",
+            "copyIndexes": [1]
+        },
+        {
+            "geometryIndex": 11,
+            "title": "Hinges",
+            "modelsForReplace": [
+                {
+                    "id": "33454",
+                    "title": "Hinge 1",
+                    "text": "Round hinge"
+                },
+                {
+                    "id": "33455",
+                    "title": "Hinge 2",
+                    "text": "Square hinge"
+                }
+            ],
+            "defaultId": "33454",
+            "copyIndexes": [7, 8, 10]
+        }
+    ]
+}
+
+
+
