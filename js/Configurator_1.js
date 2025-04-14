@@ -51,18 +51,19 @@ class Configurator_1 {
     }
 
     async loadProductData(id) {
-        const json = { ids: id };
+        const url = `${R2D.URL.DOMAIN}${R2D.URL.URL_CATALOG_SEARCH}&ids=${id}`;
         const headers = {
             "Content-type": "application/x-www-form-urlencoded",
         };
-        const body = `json=${JSON.stringify(json)}`;
-        const response = await fetch(`${R2D.URL.DOMAIN}${R2D.URL.URL_GET_PRODUCT}`, {
-            method: "POST",
-            headers,
-            body,
+        
+        const response = await fetch(url, {
+            method: "GET",
+            credentials: 'include',
+            mode: 'cors',
+            headers
         });
-        const data = await response.json();
-        return data.products[0];
+        const loadedData = await response.json();
+        return loadedData.data.items[0];
     }
 
     async getMatDataForMarkup() {
