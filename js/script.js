@@ -37,7 +37,7 @@ function onTHREELoaded() {
 }
 
 function onPlannercoreLoaded() {
-    // if (isLocalHost) return; //для локальної розробки
+    // if (isLocalHost) return; //розкоментувати для запуску кон-ра в планері запущеному на localhost:9000 з http://127.0.0.1:5500/
 
     configurator = new Configurator_1(plannerContainer, R2D);
 
@@ -60,7 +60,7 @@ function onPlannercoreLoaded() {
 // для локальної розробки розкоментувати
 // let configInfo = null;
 // let isLocalHost = true;
-// let modelId = null;
+// let modelId = "34648";
 // if (isLocalHost) {
 //     window.addEventListener("message", (e) => {
 //         if (!e.data || typeof e.data !== "string" || e.data.startsWith("/*framebus*/")) return;

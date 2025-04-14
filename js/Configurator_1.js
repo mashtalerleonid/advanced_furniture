@@ -373,6 +373,8 @@ class Configurator_1 {
 
         this.findOwnPosNoChildren();
 
+        this.findCopiesMatrices();
+
         if (this.configInfo) {
             const hashesFromConfigInfo = Object.keys(this.configInfo.meshesData);
             for (const hash in this.meshesData) {
@@ -492,6 +494,8 @@ class Configurator_1 {
         }
         this.model3d.add(mesh);
 
+        if (curMeshData.childrenPos?.length) this.findOwnPos(meshHash, curMeshData);
+
         this.sceneObject.configInfo = this.createConfigInfo();
 
         this.findParents();
@@ -546,6 +550,12 @@ class Configurator_1 {
                 // меш не має parent i children, замінюється
                 const mesh = this.getMeshByHash(hash);
                 if (!mesh) return;
+
+                this.setGeometryToOrigin(mesh.geometry);
+                if (meshData.transformMatrix) {
+                    mesh.geometry.applyMatrix4(meshData.transformMatrix);
+                }
+
                 mesh.geometry.translate(meshData.ownPos.x, meshData.ownPos.y, meshData.ownPos.z);
                 mesh.geometry.needsUpdate = true;
             }
@@ -762,14 +772,40 @@ class Configurator_1 {
             geometry.computeBoundingBox();
         }
 
-        const bbox = geometry.boundingBox;
-        const dx = -(bbox.max.x + bbox.min.x) / 2;
-        const dy = -bbox.min.y;
-        const dz = -(bbox.max.z + bbox.min.z) / 2;
+        const center = new THREE.Vector3();
+        geometry.boundingBox.getCenter(center);
 
-        geometry.translate(dx, dy, dz);
+        geometry.translate(-center.x, -center.y, -center.z);
         geometry.needsUpdate = true;
     }
+
+    // setGeometryToOriginOld(geometry) {
+    //     if (!geometry.boundingBox) {
+    //         geometry.computeBoundingBox();
+    //     }
+    //     const bbox = geometry.boundingBox;
+    //     const dx = -(bbox.max.x + bbox.min.x) / 2;
+    //     const dy = -bbox.min.y;
+    //     const dz = -(bbox.max.z + bbox.min.z) / 2;
+    //     geometry.translate(dx, dy, dz);
+    //     geometry.needsUpdate = true;
+    // }
+
+    // findOwnPosOld(hash, meshData) {
+    //     const geometry = this.getMeshByHash(hash)?.geometry;
+
+    //     if (geometry) {
+    //         if (!geometry.boundingBox) {
+    //             geometry.computeBoundingBox();
+    //         }
+
+    //         const bbox = geometry.boundingBox;
+    //         const x = (bbox.max.x + bbox.min.x) / 2;
+    //         const y = bbox.min.y;
+    //         const z = (bbox.max.z + bbox.min.z) / 2;
+    //         meshData.ownPos = { x, y, z };
+    //     }
+    // }
 
     getConfigDataByHash(hash) {
         const index = this.initMaterials.findIndex((mo) => mo.hash === hash);
@@ -799,11 +835,10 @@ class Configurator_1 {
                 geometry.computeBoundingBox();
             }
 
-            const bbox = geometry.boundingBox;
-            const x = (bbox.max.x + bbox.min.x) / 2;
-            const y = bbox.min.y;
-            const z = (bbox.max.z + bbox.min.z) / 2;
-            meshData.ownPos = { x, y, z };
+            const center = new THREE.Vector3();
+            geometry.boundingBox.getCenter(center);
+
+            meshData.ownPos = { ...center };
         }
     }
 
@@ -891,8 +926,14 @@ class Configurator_1 {
                 if (mesh.type === "Mesh") {
                     const hash = mesh.userData.md5;
 
-                    const { curId, modelsForReplace, copiesHashes, ownPos, parentHash } =
-                        this.meshesData[hash];
+                    const {
+                        curId,
+                        modelsForReplace,
+                        copiesHashes,
+                        ownPos,
+                        transformMatrix,
+                        parentHash,
+                    } = this.meshesData[hash];
 
                     configInfo.meshesData[hash] = {
                         curId,
@@ -915,6 +956,7 @@ class Configurator_1 {
 
                     if (!parentHash) {
                         configInfo.meshesData[hash].geomPos = ownPos;
+                        configInfo.meshesData[hash].transformMatrix = transformMatrix;
                     }
                 }
             });
@@ -962,5 +1004,160 @@ class Configurator_1 {
         );
 
         return url;
+    }
+
+    findCopiesMatrices() {
+        Object.entries(this.meshesData).forEach(([hash, meshData]) => {
+            if (meshData.copiesHashes) {
+                const initGeom = this.getMeshByHash(hash)?.geometry.clone();
+                meshData.copiesHashes.forEach((copyHash) => {
+                    const finalGeom = this.getMeshByHash(copyHash)?.geometry.clone();
+
+                    if (initGeom && finalGeom) {
+                        const transformMatrix = this.findTransformMatrix(initGeom, finalGeom);
+                        if (transformMatrix) {
+                            this.meshesData[copyHash].transformMatrix = transformMatrix;
+                        }
+                    }
+                });
+            }
+        });
+    }
+
+    findTransformMatrix(initGeom, finalGeom) {
+        this.setGeometryToOrigin(initGeom, true);
+        this.setGeometryToOrigin(finalGeom, true);
+
+        const initTrs = this.createTrianglesFromGeometry(initGeom);
+        const finalTrs = this.createTrianglesFromGeometry(finalGeom);
+
+        let result = null;
+        let found = false;
+
+        for (let i = 0; i < initTrs.length; i++) {
+            if (found) break;
+
+            for (let j = 0; j < finalTrs.length; j++) {
+                result = this.compareTriangles(initTrs[i], finalTrs[j]);
+                if (result) {
+                    found = true;
+                    break;
+                }
+            }
+        }
+
+        if (!result) return null;
+
+        return this.getTransformMatrix(result.initTr, result.finalTr);
+    }
+
+    getTransformMatrix(triangle1, triangle2) {
+        const A = triangle1[0];
+        const B = triangle1[1];
+        const C = triangle1[2];
+
+        const D = triangle2[0];
+        const E = triangle2[1];
+        const F = triangle2[2];
+
+        // Step 1: Translate A onto B
+        const translation = new THREE.Matrix4().makeTranslation(B.x - A.x, B.y - A.y, B.z - A.z);
+
+        // Step 2: Rotate AB onto DE
+        const AB = new THREE.Vector3().subVectors(B, A).normalize();
+        const DE = new THREE.Vector3().subVectors(E, D).normalize();
+        const rotationAxis = new THREE.Vector3().crossVectors(AB, DE).normalize();
+        const angle = Math.acos(AB.dot(DE));
+        const rotationMatrix = new THREE.Matrix4().makeRotationAxis(rotationAxis, angle);
+
+        // Step 3: Rotate C onto F by rotating the face normals of the triangles onto each other
+        const normal1 = new THREE.Vector3()
+            .crossVectors(
+                new THREE.Vector3().subVectors(B, A),
+                new THREE.Vector3().subVectors(C, A)
+            )
+            .normalize();
+        const normal2 = new THREE.Vector3()
+            .crossVectors(
+                new THREE.Vector3().subVectors(E, D),
+                new THREE.Vector3().subVectors(F, D)
+            )
+            .normalize();
+        const normalRotationAxis = new THREE.Vector3().crossVectors(normal1, normal2).normalize();
+        const normalAngle = Math.acos(normal1.dot(normal2));
+        const normalRotationMatrix = new THREE.Matrix4().makeRotationAxis(
+            normalRotationAxis,
+            normalAngle
+        );
+
+        // Combine the transformations
+        return translation.multiply(rotationMatrix).multiply(normalRotationMatrix);
+    }
+
+    createTrianglesFromGeometry(geometry) {
+        const triangles = [];
+
+        const positionAttr = geometry.attributes.position;
+        const indexAttr = geometry.index;
+
+        for (let i = 0; i < indexAttr.count; i += 3) {
+            const a = indexAttr.getX(i);
+            const b = indexAttr.getX(i + 1);
+            const c = indexAttr.getX(i + 2);
+
+            triangles.push([
+                new THREE.Vector3().fromBufferAttribute(positionAttr, a),
+                new THREE.Vector3().fromBufferAttribute(positionAttr, b),
+                new THREE.Vector3().fromBufferAttribute(positionAttr, c),
+            ]);
+        }
+
+        return triangles;
+    }
+
+    compareTriangles(triangleA, triangleB) {
+        const trA_sideAB = triangleA[0].distanceTo(triangleA[1]);
+        const trA_sideBC = triangleA[1].distanceTo(triangleA[2]);
+        const trA_sideCA = triangleA[2].distanceTo(triangleA[0]);
+
+        const trB_sideAB = triangleB[0].distanceTo(triangleB[1]);
+        const trB_sideBC = triangleB[1].distanceTo(triangleB[2]);
+        const trB_sideCA = triangleB[2].distanceTo(triangleB[0]);
+
+        if (
+            this.isEqual(trA_sideAB, trA_sideBC) ||
+            this.isEqual(trA_sideAB, trA_sideCA) ||
+            this.isEqual(trA_sideBC, trA_sideCA)
+        ) {
+            return null;
+        }
+
+        let result = { initTr: [triangleA[0], triangleA[1], triangleA[2]] };
+
+        if (
+            this.isEqual(trA_sideAB, trB_sideAB) &&
+            this.isEqual(trA_sideBC, trB_sideBC) &&
+            this.isEqual(trA_sideCA, trB_sideCA)
+        ) {
+            result.finalTr = [triangleB[0], triangleB[1], triangleB[2]];
+        } else if (
+            this.isEqual(trA_sideAB, trB_sideBC) &&
+            this.isEqual(trA_sideBC, trB_sideCA) &&
+            this.isEqual(trA_sideCA, trB_sideAB)
+        ) {
+            result.finalTr = [triangleB[1], triangleB[2], triangleB[0]];
+        } else if (
+            this.isEqual(trA_sideAB, trB_sideCA) &&
+            this.isEqual(trA_sideBC, trB_sideAB) &&
+            this.isEqual(trA_sideCA, trB_sideBC)
+        ) {
+            result.finalTr = [triangleB[2], triangleB[0], triangleB[1]];
+        }
+
+        return result.finalTr ? result : null;
+    }
+
+    isEqual(a, b, acc = 0.0001) {
+        return Math.abs(a - b) < acc;
     }
 }
