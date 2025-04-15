@@ -1,8 +1,14 @@
 class Configurator_1 {
     constructor(plannerContainer, R2D) {
+        this.initializeProperties();
+        this.setupListeners(R2D);
+        this.PH = new PlannerHelper(plannerContainer, R2D, this);
+        EventDispatcher.call(this);
+    }
+
+    initializeProperties() {
         this.configId = "1";
         this.configType = "";
-
         this.modelData = null;
         this.meshesData = {};
         this.configData = null;
@@ -22,15 +28,13 @@ class Configurator_1 {
         this.initMaterials = [];
         this.objectViewer3D = null;
         this.protector = 0;
+    }
 
+    setupListeners(R2D) {
         this.productsDataLoader = new R2D.ProductsDataLoader();
         this.initProductDataLoadedListener = this.onInitProductDataLoaded.bind(this);
         this.init3DLoadedListener = this.onInit3DLoaded.bind(this);
         this.forReplace3DLoadedListener = this.forReplace3DLoaded.bind(this);
-
-        this.PH = new PlannerHelper(plannerContainer, R2D, this);
-
-        EventDispatcher.call(this);
     }
 
     customizePlanner() {
@@ -55,12 +59,11 @@ class Configurator_1 {
         const headers = {
             "Content-type": "application/x-www-form-urlencoded",
         };
-        
         const response = await fetch(url, {
             method: "GET",
-            credentials: 'include',
-            mode: 'cors',
-            headers
+            credentials: "include",
+            mode: "cors",
+            headers,
         });
         const loadedData = await response.json();
         return loadedData.data.items[0];
@@ -134,11 +137,21 @@ class Configurator_1 {
         return matData;
     }
 
+    getPrevSrc(id) {
+        if (id === "0") return hideImg.src;
+
+        const productData = R2D.Pool.getProductData(id);
+        if (!productData) return null;
+
+        return `${R2D.URL.DOMAIN}${productData.source.images.preview}`;
+    }
+
     start(modelId, configInfo) {
         this.customizePlanner();
         this.startModelId = modelId;
+        const idToPlace =
+            configInfo?.configType === "modelReplace" ? configInfo.modelData.curId : modelId;
 
-        let idToPlace = modelId;
         const settings = {
             x: 0,
             y: 0,
@@ -147,38 +160,42 @@ class Configurator_1 {
             needUpdateCameraDist: true,
         };
 
-        if (configInfo && configInfo.configType === "modelReplace") {
-            idToPlace = configInfo.modelData.curId;
-        }
-
         this.PH.placeModel(idToPlace, settings, () => {
-            if (this.isPlanner) {
-                this.sceneObject.width = configInfo.params.width;
-                this.sceneObject.height = configInfo.params.height;
-                this.sceneObject.depth = configInfo.params.depth;
-            }
-
-            curParams = {
-                width: this.sceneObject.width,
-                height: this.sceneObject.height,
-                depth: this.sceneObject.depth,
-                elevation: this.sceneObject.objectData.property.position.y,
-            };
-
-            widthInp.value = curParams.width;
-            heightInp.value = curParams.height;
-            depthInp.value = curParams.depth;
-            elevationInp.value = curParams.elevation;
-
-            if (!configInfo || Object.keys(configInfo).every((key) => key == "params")) {
-                this.configInfo = null;
-            } else {
-                this.configInfo = configInfo;
-                this.sceneObject.configInfo = configInfo;
-            }
-
+            this.initializeSceneObject(configInfo);
             this.startConfigurate(this.startModelId);
         });
+    }
+
+    initializeSceneObject(configInfo) {
+        if (this.isPlanner) {
+            this.sceneObject.width = configInfo.params.width;
+            this.sceneObject.height = configInfo.params.height;
+            this.sceneObject.depth = configInfo.params.depth;
+        }
+
+        const curParams = {
+            width: this.sceneObject.width,
+            height: this.sceneObject.height,
+            depth: this.sceneObject.depth,
+            elevation: this.sceneObject.objectData.property.position.y,
+        };
+
+        widthInp.value = curParams.width;
+        heightInp.value = curParams.height;
+        depthInp.value = curParams.depth;
+        elevationInp.value = curParams.elevation;
+
+        this.configInfo =
+            configInfo && Object.keys(configInfo).some((key) => key !== "params")
+                ? configInfo
+                : null;
+        if (this.configInfo) this.sceneObject.configInfo = configInfo;
+    }
+
+    findConfigType() {
+        return this.configData.geometries?.length > 0 || this.sceneObject.isParametric
+            ? "meshReplace"
+            : "modelReplace";
     }
 
     async startConfigurate(modelId) {
@@ -189,13 +206,12 @@ class Configurator_1 {
         }
 
         this.initMaterials = this.sceneObject.getMaterialsObjects().map((mo) => ({ ...mo }));
+        this.configType = this.findConfigType();
 
         let allPossibleProductIds = [];
 
-        if (this.configData.geometries?.length > 0 || this.sceneObject.isParametric) {
+        if (this.configType === "meshReplace") {
             // заміна мешей
-            this.configType = "meshReplace";
-
             const allCopyIndexes = this.configData.geometries.flatMap(
                 (data) => data.copyIndexes || []
             );
@@ -232,6 +248,7 @@ class Configurator_1 {
                             this.meshesData[hashCopy].curId =
                                 this.configInfo?.meshesData[hash]?.curId ||
                                 this.meshesData[hash].defaultId;
+                            this.meshesData[hashCopy].defaultId = this.meshesData[hash].defaultId;
                             this.meshesData[hashCopy].childrenPos = [];
                         });
                     }
@@ -283,9 +300,8 @@ class Configurator_1 {
                     this.PH.configurateParametric();
                 }
             }
-        } else {
+        } else if (this.configType === "modelReplace") {
             // заміна моделей
-            this.configType = "modelReplace";
             this.modelData = this.configData.model;
             this.modelData.defaultId = modelId;
             if (this.configInfo) {
@@ -308,15 +324,6 @@ class Configurator_1 {
         this.productsDataLoader.load(allPossibleProductIds);
     }
 
-    getPrevSrc(id) {
-        if (id === "0") return hideImg.src;
-
-        const productData = R2D.Pool.getProductData(id);
-        if (!productData) return null;
-
-        return `${R2D.URL.DOMAIN}${productData.source.images.preview}`;
-    }
-
     async getConfigData(modelId) {
         const objectData =
             R2D.Pool.getProductData(modelId) || (await this.loadProductData(modelId));
@@ -333,9 +340,6 @@ class Configurator_1 {
         } catch (error) {
             console.log(error);
         }
-
-        // const jsonFile = await fetch("../33123/main.json");
-        // obj = await jsonFile.json();
 
         return obj;
     }
@@ -357,7 +361,7 @@ class Configurator_1 {
         }
     }
 
-    onInit3DLoaded(e) {
+    async onInit3DLoaded(e) {
         if (
             !Object.values(this.meshesData)
                 .map((data) => data.curId)
@@ -374,23 +378,12 @@ class Configurator_1 {
 
         this.findOwnPosNoChildren();
 
-        this.findCopiesMatrices();
+        await this.findTransformMatrices();
 
         if (this.configInfo) {
-            const hashesFromConfigInfo = Object.keys(this.configInfo.meshesData);
-            for (const hash in this.meshesData) {
-                if (hashesFromConfigInfo.includes(hash)) {
-                    this.replaceMesh(this.meshesData[hash].curId, hash);
-                } else {
-                    this.removeMeshFromModel(hash);
-                }
-            }
-
-            this.sceneObject.setMaterialsObjects(this.configInfo.materials);
+            this.applyConfigInfo();
         } else {
-            for (const hash in this.meshesData) {
-                this.replaceMesh(this.meshesData[hash].curId, hash);
-            }
+            this.replaceAllMeshes();
         }
 
         this.findOwnPosWithChildren();
@@ -406,6 +399,24 @@ class Configurator_1 {
         this.updateModelPosition();
 
         this.dispatchEvent(new Event("renderSettingsContainer"));
+    }
+
+    applyConfigInfo() {
+        const hashesFromConfigInfo = Object.keys(this.configInfo.meshesData);
+        for (const hash in this.meshesData) {
+            if (hashesFromConfigInfo.includes(hash)) {
+                this.replaceMesh(this.meshesData[hash].curId, hash);
+            } else {
+                this.removeMeshFromModel(hash);
+            }
+        }
+        this.sceneObject.setMaterialsObjects(this.configInfo.materials);
+    }
+
+    replaceAllMeshes() {
+        for (const hash in this.meshesData) {
+            this.replaceMesh(this.meshesData[hash].curId, hash);
+        }
     }
 
     startReplaceMesh(id, hash) {
@@ -780,34 +791,6 @@ class Configurator_1 {
         geometry.needsUpdate = true;
     }
 
-    // setGeometryToOriginOld(geometry) {
-    //     if (!geometry.boundingBox) {
-    //         geometry.computeBoundingBox();
-    //     }
-    //     const bbox = geometry.boundingBox;
-    //     const dx = -(bbox.max.x + bbox.min.x) / 2;
-    //     const dy = -bbox.min.y;
-    //     const dz = -(bbox.max.z + bbox.min.z) / 2;
-    //     geometry.translate(dx, dy, dz);
-    //     geometry.needsUpdate = true;
-    // }
-
-    // findOwnPosOld(hash, meshData) {
-    //     const geometry = this.getMeshByHash(hash)?.geometry;
-
-    //     if (geometry) {
-    //         if (!geometry.boundingBox) {
-    //             geometry.computeBoundingBox();
-    //         }
-
-    //         const bbox = geometry.boundingBox;
-    //         const x = (bbox.max.x + bbox.min.x) / 2;
-    //         const y = bbox.min.y;
-    //         const z = (bbox.max.z + bbox.min.z) / 2;
-    //         meshData.ownPos = { x, y, z };
-    //     }
-    // }
-
     getConfigDataByHash(hash) {
         const index = this.initMaterials.findIndex((mo) => mo.hash === hash);
         return this.configData.geometries.find((data) => data.geometryIndex === index);
@@ -934,6 +917,7 @@ class Configurator_1 {
                         ownPos,
                         transformMatrix,
                         parentHash,
+                        childrenPos,
                     } = this.meshesData[hash];
 
                     configInfo.meshesData[hash] = {
@@ -957,7 +941,9 @@ class Configurator_1 {
 
                     if (!parentHash) {
                         configInfo.meshesData[hash].geomPos = ownPos;
-                        configInfo.meshesData[hash].transformMatrix = transformMatrix;
+                        if (!childrenPos.length) {
+                            configInfo.meshesData[hash].transformMatrix = transformMatrix;
+                        }
                     }
                 }
             });
@@ -966,7 +952,8 @@ class Configurator_1 {
                 width: this.sceneObject.width,
                 height: this.sceneObject.height,
                 depth: this.sceneObject.depth,
-                elevation: this.sceneObject.elevation || this.sceneObject.objectData.property.position.y,
+                elevation:
+                    this.sceneObject.elevation || this.sceneObject.objectData.property.position.y,
             };
         }
 
@@ -985,9 +972,10 @@ class Configurator_1 {
     getURLforAR(size) {
         const configInfo = this.createConfigInfo();
 
-        const hashessArr = configInfo.configType === "meshReplace"
-            ? this.initMaterials.map((mo) => mo.hash)
-            : this.sceneObject.getMaterialsObjects().map((mo) => mo.hash);
+        const hashessArr =
+            configInfo.configType === "meshReplace"
+                ? this.initMaterials.map((mo) => mo.hash)
+                : this.sceneObject.getMaterialsObjects().map((mo) => mo.hash);
 
         const shortConfigInfo = R2D.AR.convertToShort(configInfo, hashessArr);
         const confInfo64 = btoa(JSON.stringify(shortConfigInfo));
@@ -1007,27 +995,60 @@ class Configurator_1 {
         return url;
     }
 
-    findCopiesMatrices() {
-        Object.entries(this.meshesData).forEach(([hash, meshData]) => {
-            if (meshData.copiesHashes) {
-                const initGeom = this.getMeshByHash(hash)?.geometry.clone();
-                meshData.copiesHashes.forEach((copyHash) => {
-                    const finalGeom = this.getMeshByHash(copyHash)?.geometry.clone();
+    async findTransformMatrices() {
+        for (const [hash, meshData] of Object.entries(this.meshesData)) {
+            if (meshData.curId == -1) continue;
 
-                    if (initGeom && finalGeom) {
-                        const transformMatrix = this.findTransformMatrix(initGeom, finalGeom);
-                        if (transformMatrix) {
-                            this.meshesData[copyHash].transformMatrix = transformMatrix;
-                        }
-                    }
-                });
+            const initGeom = await this.getInitGeometry(meshData.defaultId);
+            if (!initGeom) continue;
+
+            const finalGeom = this.getMeshByHash(hash)?.geometry.clone();
+            if (!finalGeom) continue;
+
+            const transformMatrix = this.findTransformMatrix(initGeom, finalGeom);
+            if (transformMatrix) {
+                meshData.transformMatrix = transformMatrix;
             }
+        }
+    }
+
+    async getInitGeometry(productId) {
+        let productData = R2D.Pool.getProductData(productId);
+        if (!productData) {
+            productData = await this.loadProductData(productId);
+        }
+        R2D.Pool.getProductData(productId).isGLTF = true;
+
+        if (R2D.Pool3D.isLoaded(productId)) {
+            return this.extractGeometry(productId);
+        }
+
+        return new Promise((resolve) => {
+            const finishHandler = (e) => {
+                if (e.data !== productId) return;
+
+                R2D.Pool3D.removeEventListener(Event.FINISH, finishHandler);
+                resolve(this.extractGeometry(productId));
+            };
+
+            R2D.Pool3D.addEventListener(Event.FINISH, finishHandler);
+            R2D.Pool3D.load(productId);
         });
     }
 
+    extractGeometry(productId) {
+        let geometry = null;
+        R2D.Pool3D.getData(productId).scene.traverse((obj) => {
+            if (obj.type === "Mesh") {
+                geometry = obj.geometry.clone();
+            }
+        });
+        return geometry;
+    }
+
     findTransformMatrix(initGeom, finalGeom) {
-        this.setGeometryToOrigin(initGeom, true);
-        this.setGeometryToOrigin(finalGeom, true);
+        this.setGeometryToOrigin(initGeom);
+        this.setGeometryToOrigin(finalGeom);
 
         const initTrs = this.createTrianglesFromGeometry(initGeom);
         const finalTrs = this.createTrianglesFromGeometry(finalGeom);
