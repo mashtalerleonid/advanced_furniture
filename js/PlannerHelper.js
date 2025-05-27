@@ -14,6 +14,7 @@ class PlannerHelper {
 
         this.isCameraMoveEnabled = true;
         this.sceneObject = null;
+        this.distToCam = 0;
 
         // -------------------- Listeners -------------------
         window.addEventListener("resize", () => {
@@ -33,11 +34,8 @@ class PlannerHelper {
         this.plannerDom.addEventListener("mouseup", this.planner.scene.mouseup);
 
         this.plannerDom.addEventListener("wheel", (e) => {
-            if (e.deltaY < 0) {
-                this.planner.zoomIn();
-            } else {
-                this.planner.zoomOut();
-            }
+            const zoomDirection = e.deltaY < 0 ? -1 : 1;
+            R2D.view3d.cameraZoomSmooth(zoomDirection);
         });
         // -------------------- end Listeners -------------------
     }
@@ -64,6 +62,16 @@ class PlannerHelper {
         R2D.commonSceneObject.hideTerrain();
     }
 
+    removeTerrainTexture() {
+        // Забрати текстуру з землі
+        R2D.commonSceneObject.removeTextureFromTerrain();
+    }
+
+    addSizesToModel() {
+        this.configurator.sceneObject.update();
+        R2D.ObjectViewer3D.addSizes(this.configurator.model3d, this.distToCam);
+    }
+
     blockSelectAndDrag() {
         //Заборонити виділення і перетягування моделі
         R2D.mouseInteractionHelper.state.setIsSelectingModel(false);
@@ -74,9 +82,49 @@ class PlannerHelper {
         R2D.scene.setMinElevation(minElevation);
     }
 
-    setCameraSettings(settings) {
-        // Встановити налаштування камери
-        R2D.view3d.setCameraSettings(settings);
+    updateCameraSettings(sceneObject, useDefault = true) {
+        // Встановити налаштування камери на основі розмірів моделі
+        const { width, height, depth } = sceneObject;
+        const vFovRad = (Math.PI / 180) * R2D.mouseInteractionHelper._currentCamera.fov;
+        const aspect = R2D.mouseInteractionHelper._currentCamera.aspect;
+
+        const distance = findCameraDist(aspect, vFovRad, width, height, depth);
+        const minDist = distance * 0.3;
+        const maxDist = distance * 1.5;
+        
+        R2D.view3d.setCameraSettings({
+            minDist, //мінімальна відстань від моделі до камери
+            maxDist, //максимальна відстань від моделі до камери
+            distance, //відстань від моделі до камери
+            pan: useDefault ? 0.5 : R2D.view3d.cameraState.pan, //поворот камери вліво-вправо
+            tilt: useDefault ? 0.6 : R2D.view3d.cameraState.tilt.current, //поворот камери вверх-вниз
+            far: 8000, //максимальна відстань, на якій камера рендерить
+            minHeight: height / 2, //Мінімальна висота камери, сумується з якорем
+            anchor: { x: 0, y: height / 2, z: 0 }, //Точка, навколо якої обертається камера (якір)
+            isLookUp: false, //чи піднімається якір, коли камера опускається нижче minHeight (Щоб не бачити низ моделі)
+            sensitiveZoom: 0.15, //Чутливість збільшення
+        });
+
+        this.distToCam = distance;
+
+        function findCameraDist(cameraAspect, vFov, objWidth, objHeight, objDepth) {
+            function distToFitSizeInView(size, fov) {
+                return size / (2 * Math.tan(fov / 2));
+            }
+
+            const k = 0.8;
+            const objAspect = objWidth / objHeight;
+            const hFov = 2 * Math.atan(Math.tan(vFov / 2) * cameraAspect);
+
+            const diametr = Math.sqrt(objWidth ** 2 + objHeight ** 2 + objDepth ** 2);
+
+            const dist =
+                objAspect < cameraAspect
+                    ? distToFitSizeInView(diametr, vFov)
+                    : distToFitSizeInView(diametr, hFov);
+
+            return dist + objDepth * cameraAspect * k;
+        }
     }
 
     placeModel(id, settings, callback) {
@@ -93,8 +141,6 @@ class PlannerHelper {
                 R2D.commonSceneHelper.productHelper.findObjectView3dBySceneObject(sceneObject);
             this.configurator.sceneObject = sceneObject;
             this.configurator.model3d = this.configurator.objectViewer3D.object3d;
-
-            if (settings.needUpdateCameraDist) this.updateCameraDistance(this.configurator.model3d);
 
             if (R2D.Pool3D.isLoaded(id)) {
                 onPool3DFinishListener.call(this);
@@ -115,20 +161,6 @@ class PlannerHelper {
             }
         }
         onPool3DFinishListener = onPool3DFinishListener.bind(this);
-    }
-
-    updateCameraDistance(model3d) {
-        // щоб вся модель була в полі зору
-        const bbox = new THREE.Box3().setFromObject(model3d);
-        const width = bbox.max.x - bbox.min.x;
-        const height = bbox.max.y - bbox.min.y;
-        const depth = bbox.max.z - bbox.min.z;
-        const fov = R2D.mouseInteractionHelper._currentCamera.fov;
-        const angle = ((fov / 2) * Math.PI) / 180;
-        const radius = Math.sqrt(width ** 2 / 4 + height ** 2 / 4 + depth ** 2 / 4);
-        const distance = (radius / Math.sin(angle)) * Math.cos(angle) + radius;
-
-        R2D.Viewers.getCurrentViewer().updateCameraDistance(distance);
     }
 
     render() {

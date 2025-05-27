@@ -3,6 +3,7 @@ class Configurator_1 {
         this.initializeProperties();
         this.setupListeners(R2D);
         this.PH = new PlannerHelper(plannerContainer, R2D, this);
+        this.customizePlanner();
         EventDispatcher.call(this);
     }
 
@@ -39,19 +40,8 @@ class Configurator_1 {
 
     customizePlanner() {
         this.PH.disableCameraMoving();
-        this.PH.setBgdColor(0xffffff);
-        this.PH.hideTerrain();
         this.PH.blockSelectAndDrag();
-        this.PH.setMinElevation(-200);
-        this.PH.setCameraSettings({
-            minHeight: 0, //Мінімальна висота камери, сумується з якорем
-            anchor: { x: 0, y: 0, z: 0 }, //Точка, навколо якої обертається камера (якір)
-            isLookUp: false, //чи піднімається якір, коли камера опускається нижче minHeight (Щоб модель завжди була в полі зору)
-            sensitiveZoom: 0.01, //Чутливість збільшення
-            distance: 700, //відстань від моделі до камери
-            pan: 0.5, //поворот камери вліво-вправо
-            tilt: 0.6, //поворот камери вверх-вниз
-        });
+        this.PH.removeTerrainTexture();
     }
 
     async loadProductData(id) {
@@ -147,7 +137,6 @@ class Configurator_1 {
     }
 
     start(modelId, configInfo) {
-        this.customizePlanner();
         this.startModelId = modelId;
         const idToPlace =
             configInfo?.configType === "modelReplace" ? configInfo.modelData.curId : modelId;
@@ -156,12 +145,11 @@ class Configurator_1 {
             x: 0,
             y: 0,
             z: 0,
-            isStartCoordInModelCenter: true,
-            needUpdateCameraDist: true,
         };
 
         this.PH.placeModel(idToPlace, settings, () => {
             this.initializeSceneObject(configInfo);
+            this.PH.updateCameraSettings(this.sceneObject);
             this.startConfigurate(this.startModelId);
         });
     }
@@ -171,13 +159,14 @@ class Configurator_1 {
             this.sceneObject.width = configInfo.params.width;
             this.sceneObject.height = configInfo.params.height;
             this.sceneObject.depth = configInfo.params.depth;
+            this.sceneObject.elevation = configInfo.params.elevation || 0;
         }
 
-        const curParams = {
+        curParams = {
             width: this.sceneObject.width,
             height: this.sceneObject.height,
             depth: this.sceneObject.depth,
-            elevation: this.sceneObject.objectData.property.position.y,
+            elevation: this.sceneObject.elevation || this.sceneObject.objectData.property.position.y,
         };
 
         widthInp.value = curParams.width;
@@ -394,10 +383,6 @@ class Configurator_1 {
 
         this.updateAllMeshes();
 
-        this.PH.updateCameraDistance(this.model3d);
-
-        this.updateModelPosition();
-
         this.dispatchEvent(new Event("renderSettingsContainer"));
     }
 
@@ -522,8 +507,6 @@ class Configurator_1 {
             x: 0,
             y: 0,
             z: 0,
-            isStartCoordInModelCenter: true,
-            needUpdateCameraDist: false,
         };
 
         this.PH.placeModel(newModelId, settings, () => {
@@ -563,6 +546,7 @@ class Configurator_1 {
                 const mesh = this.getMeshByHash(hash);
                 if (!mesh) return;
 
+                this.setInitGeometryToMesh(mesh, meshData.curId);
                 this.setGeometryToOrigin(mesh.geometry);
                 if (meshData.transformMatrix) {
                     mesh.geometry.applyMatrix4(meshData.transformMatrix);
@@ -613,12 +597,6 @@ class Configurator_1 {
 
             curChildPos = this.meshesData[curChildPos[0].childHash].childrenPos;
         }
-    }
-
-    updateModelPosition() {
-        const bbox = new THREE.Box3().setFromObject(this.model3d);
-        this.sceneObject.y = -(bbox.max.y - bbox.min.y) / 2;
-        this.sceneObject.update();
     }
 
     hideMesh(hash) {
@@ -964,7 +942,7 @@ class Configurator_1 {
         this.sceneObject.setWidth(params.width);
         this.sceneObject.setHeight(params.height);
         this.sceneObject.setDepth(params.depth);
-        this.sceneObject.y = -params.height / 2;
+        // this.sceneObject.y = -params.height / 2;
         this.sceneObject.elevation = params.elevation;
         this.sceneObject.update();
     }
@@ -1002,7 +980,7 @@ class Configurator_1 {
             const initGeom = await this.getInitGeometry(meshData.defaultId);
             if (!initGeom) continue;
 
-            const finalGeom = this.getMeshByHash(hash)?.geometry.clone();
+            const finalGeom = this.getMeshByHash(hash)?.geometry;
             if (!finalGeom) continue;
 
             const transformMatrix = this.findTransformMatrix(initGeom, finalGeom);
@@ -1040,146 +1018,113 @@ class Configurator_1 {
         let geometry = null;
         R2D.Pool3D.getData(productId).scene.traverse((obj) => {
             if (obj.type === "Mesh") {
-                geometry = obj.geometry.clone();
+                geometry = obj.geometry;
             }
         });
         return geometry;
     }
 
-    findTransformMatrix(initGeom, finalGeom) {
-        this.setGeometryToOrigin(initGeom);
-        this.setGeometryToOrigin(finalGeom);
-
-        const initTrs = this.createTrianglesFromGeometry(initGeom);
-        const finalTrs = this.createTrianglesFromGeometry(finalGeom);
-
-        let result = null;
-        let found = false;
-
-        for (let i = 0; i < initTrs.length; i++) {
-            if (found) break;
-
-            for (let j = 0; j < finalTrs.length; j++) {
-                result = this.compareTriangles(initTrs[i], finalTrs[j]);
-                if (result) {
-                    found = true;
-                    break;
-                }
-            }
-        }
-
-        if (!result) return null;
-
-        return this.getTransformMatrix(result.initTr, result.finalTr);
+    setInitGeometryToMesh(mesh, id) {
+        mesh.geometry = this.extractGeometry(id).clone();
     }
 
-    getTransformMatrix(triangle1, triangle2) {
-        const A = triangle1[0];
-        const B = triangle1[1];
-        const C = triangle1[2];
+    findTransformMatrix(initGeom, finalGeom) {
+        const nonIndexedInitGeom = initGeom.toNonIndexed();
+        const nonIndexedFinalGeom = finalGeom.toNonIndexed();
 
-        const D = triangle2[0];
-        const E = triangle2[1];
-        const F = triangle2[2];
+        return findRotationBetweenGeometries(nonIndexedInitGeom, nonIndexedFinalGeom);
+    }
+}
 
-        // Step 1: Translate A onto B
-        const translation = new THREE.Matrix4().makeTranslation(B.x - A.x, B.y - A.y, B.z - A.z);
+function findRotationBetweenGeometries(initialGeometry, finalGeometry) {
+    const posA = initialGeometry.attributes.position;
+    const posB = finalGeometry.attributes.position;
 
-        // Step 2: Rotate AB onto DE
-        const AB = new THREE.Vector3().subVectors(B, A).normalize();
-        const DE = new THREE.Vector3().subVectors(E, D).normalize();
-        const rotationAxis = new THREE.Vector3().crossVectors(AB, DE).normalize();
-        const angle = Math.acos(AB.dot(DE));
-        const rotationMatrix = new THREE.Matrix4().makeRotationAxis(rotationAxis, angle);
+    if (posA.count !== posB.count) {
+        throw new Error("Geometries must have the same number of vertices");
+    }
 
-        // Step 3: Rotate C onto F by rotating the face normals of the triangles onto each other
-        const normal1 = new THREE.Vector3()
-            .crossVectors(
-                new THREE.Vector3().subVectors(B, A),
-                new THREE.Vector3().subVectors(C, A)
-            )
-            .normalize();
-        const normal2 = new THREE.Vector3()
-            .crossVectors(
-                new THREE.Vector3().subVectors(E, D),
-                new THREE.Vector3().subVectors(F, D)
-            )
-            .normalize();
-        const normalRotationAxis = new THREE.Vector3().crossVectors(normal1, normal2).normalize();
-        const normalAngle = Math.acos(normal1.dot(normal2));
-        const normalRotationMatrix = new THREE.Matrix4().makeRotationAxis(
-            normalRotationAxis,
-            normalAngle
+    // Compute centroids
+    const centroidA = new THREE.Vector3();
+    const centroidB = new THREE.Vector3();
+    for (let i = 0; i < posA.count; i++) {
+        centroidA.add(new THREE.Vector3().fromBufferAttribute(posA, i));
+        centroidB.add(new THREE.Vector3().fromBufferAttribute(posB, i));
+    }
+    centroidA.divideScalar(posA.count);
+    centroidB.divideScalar(posB.count);
+
+    // Assemble corresponding points arrays (centered)
+    const pointsA = [];
+    const pointsB = [];
+    for (let i = 0; i < posA.count; i++) {
+        pointsA.push(new THREE.Vector3().fromBufferAttribute(posA, i).sub(centroidA));
+        pointsB.push(new THREE.Vector3().fromBufferAttribute(posB, i).sub(centroidB));
+    }
+
+    // Kabsch algorithm
+    // Compute covariance matrix H (zero-initialize!)
+    let H = [
+        [0, 0, 0],
+        [0, 0, 0],
+        [0, 0, 0],
+    ];
+    for (let i = 0; i < pointsA.length; i++) {
+        const a = pointsA[i];
+        const b = pointsB[i];
+        H[0][0] += a.x * b.x;
+        H[0][1] += a.x * b.y;
+        H[0][2] += a.x * b.z;
+        H[1][0] += a.y * b.x;
+        H[1][1] += a.y * b.y;
+        H[1][2] += a.y * b.z;
+        H[2][0] += a.z * b.x;
+        H[2][1] += a.z * b.y;
+        H[2][2] += a.z * b.z;
+    }
+
+    // SVD decomposition of H
+    let U, S, V;
+    if (typeof numeric !== "undefined" && numeric.svd) {
+        const svd = numeric.svd(H);
+        // U, S, V are arrays from numeric.js
+        U = svd.U;
+        V = svd.V;
+        // Compute R = V * U^T
+        // numeric.js provides transpose and dot
+        let UT = numeric.transpose(U);
+        let R = numeric.dot(V, UT);
+
+        // If det(R) < 0, fix improper rotation (reflection)
+        if (numeric.det(R) < 0) {
+            V[2][0] *= -1;
+            V[2][1] *= -1;
+            V[2][2] *= -1;
+            R = numeric.dot(V, UT);
+        }
+
+        // Convert R (3x3) to THREE.Matrix4
+        const rotMat4 = new THREE.Matrix4().set(
+            R[0][0],
+            R[0][1],
+            R[0][2],
+            0,
+            R[1][0],
+            R[1][1],
+            R[1][2],
+            0,
+            R[2][0],
+            R[2][1],
+            R[2][2],
+            0,
+            0,
+            0,
+            0,
+            1
         );
 
-        // Combine the transformations
-        return translation.multiply(rotationMatrix).multiply(normalRotationMatrix);
-    }
-
-    createTrianglesFromGeometry(geometry) {
-        const triangles = [];
-
-        const positionAttr = geometry.attributes.position;
-        const indexAttr = geometry.index;
-
-        for (let i = 0; i < indexAttr.count; i += 3) {
-            const a = indexAttr.getX(i);
-            const b = indexAttr.getX(i + 1);
-            const c = indexAttr.getX(i + 2);
-
-            triangles.push([
-                new THREE.Vector3().fromBufferAttribute(positionAttr, a),
-                new THREE.Vector3().fromBufferAttribute(positionAttr, b),
-                new THREE.Vector3().fromBufferAttribute(positionAttr, c),
-            ]);
-        }
-
-        return triangles;
-    }
-
-    compareTriangles(triangleA, triangleB) {
-        const trA_sideAB = triangleA[0].distanceTo(triangleA[1]);
-        const trA_sideBC = triangleA[1].distanceTo(triangleA[2]);
-        const trA_sideCA = triangleA[2].distanceTo(triangleA[0]);
-
-        const trB_sideAB = triangleB[0].distanceTo(triangleB[1]);
-        const trB_sideBC = triangleB[1].distanceTo(triangleB[2]);
-        const trB_sideCA = triangleB[2].distanceTo(triangleB[0]);
-
-        if (
-            this.isEqual(trA_sideAB, trA_sideBC) ||
-            this.isEqual(trA_sideAB, trA_sideCA) ||
-            this.isEqual(trA_sideBC, trA_sideCA)
-        ) {
-            return null;
-        }
-
-        let result = { initTr: [triangleA[0], triangleA[1], triangleA[2]] };
-
-        if (
-            this.isEqual(trA_sideAB, trB_sideAB) &&
-            this.isEqual(trA_sideBC, trB_sideBC) &&
-            this.isEqual(trA_sideCA, trB_sideCA)
-        ) {
-            result.finalTr = [triangleB[0], triangleB[1], triangleB[2]];
-        } else if (
-            this.isEqual(trA_sideAB, trB_sideBC) &&
-            this.isEqual(trA_sideBC, trB_sideCA) &&
-            this.isEqual(trA_sideCA, trB_sideAB)
-        ) {
-            result.finalTr = [triangleB[1], triangleB[2], triangleB[0]];
-        } else if (
-            this.isEqual(trA_sideAB, trB_sideCA) &&
-            this.isEqual(trA_sideBC, trB_sideAB) &&
-            this.isEqual(trA_sideCA, trB_sideBC)
-        ) {
-            result.finalTr = [triangleB[2], triangleB[0], triangleB[1]];
-        }
-
-        return result.finalTr ? result : null;
-    }
-
-    isEqual(a, b, acc = 0.0001) {
-        return Math.abs(a - b) < acc;
+        return rotMat4;
+    } else {
+        return null;
     }
 }
