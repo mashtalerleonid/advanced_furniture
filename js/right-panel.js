@@ -287,6 +287,7 @@ async function renderSettingsContainer(side = "to-left") {
     if (configurator.sceneObject.isParametric) {
         settingsContainerEl.append(changeSizeWr);
         changeSizeWr.classList.remove("hidden");
+        updateInputs();
     }
 
     // заміна цілої моделі

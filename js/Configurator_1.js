@@ -166,13 +166,9 @@ class Configurator_1 {
             width: this.sceneObject.width,
             height: this.sceneObject.height,
             depth: this.sceneObject.depth,
-            elevation: this.sceneObject.elevation || this.sceneObject.objectData.property.position.y,
+            elevation:
+                this.sceneObject.elevation || this.sceneObject.objectData.property.position.y,
         };
-
-        widthInp.value = curParams.width;
-        heightInp.value = curParams.height;
-        depthInp.value = curParams.depth;
-        elevationInp.value = curParams.elevation;
 
         this.configInfo =
             configInfo && Object.keys(configInfo).some((key) => key !== "params")
@@ -187,12 +183,34 @@ class Configurator_1 {
             : "modelReplace";
     }
 
+    updateDimLimits() {
+        const dimSettings = this.configData.model.dimensions;
+        if (!dimSettings) return;
+
+        dims.forEach((dim) => {
+            if (dimSettings[dim]) {
+                dimLimits[dim] = dimSettings[dim];
+            } else {
+                dimsToDisable.push(dim);
+            }
+        });
+
+        if (dimsToDisable.length === 0) return;
+
+        dimsToDisable.forEach((dim) => {
+            dimContainers[dim].classList.add("dimDisabled");
+        });
+        wrapSVG.classList.add("lockDisabled");
+    }
+
     async startConfigurate(modelId) {
         this.configData = await this.getConfigData(modelId);
         if (!this.configData) {
             console.error("No config data!");
             return;
         }
+
+        this.updateDimLimits();
 
         this.initMaterials = this.sceneObject.getMaterialsObjects().map((mo) => ({ ...mo }));
         this.configType = this.findConfigType();

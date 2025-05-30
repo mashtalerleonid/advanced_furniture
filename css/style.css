@@ -456,6 +456,24 @@ img {
     top: 0;
 }
 
+.lockDisabled {
+    pointer-events: none;
+    & path,
+    & rect {
+        fill: var(--grey-color);
+    }
+}
+
+.dimDisabled {
+    pointer-events: none;
+    & .text,
+    & .input {
+        color: var(--grey-color);
+    }
+    & .arrows path {
+        fill: var(--grey-color);
+    }
+}
 
 /* ----------cur materials------------ */
 

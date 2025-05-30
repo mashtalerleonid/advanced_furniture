@@ -17,6 +17,13 @@ const lockSVG = document.querySelector("#lockSVG");
 const unlockSVG = document.querySelector("#unlockSVG");
 const materialsGrid = document.querySelector("#materialsGrid");
 
+const dims = ["width", "height", "depth"];
+const dimContainers = {
+    width: document.querySelector("#widthContainer"),
+    height: document.querySelector("#heightContainer"),
+    depth: document.querySelector("#depthContainer"),
+};
+
 function stopInterval() {
     clearInterval(intervalId);
     delay = 0;
@@ -46,7 +53,23 @@ function mousePressedListener(type, delta) {
     }, 100);
 }
 
+function checkLimits(type, value) {
+    let checkedVal = value;
+    if (value < dimLimits[type].min) {
+        checkedVal = dimLimits[type].min;
+    } else if (value > dimLimits[type].max) {
+        checkedVal = dimLimits[type].max;
+    }
+    return checkedVal;
+}
+
 function sizeChanged(type, value) {
+    value = checkLimits(type, value);
+    if (value === curParams[type]) {
+        updateInputs();
+        return;
+    }
+
     curParams[type] = value;
 
     switch (type) {

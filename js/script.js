@@ -6,6 +6,13 @@ let configurator = null;
 
 let value = 0;
 let curParams = {};
+let dimLimits = {
+    width: { min: 1, max: Infinity },
+    height: { min: 1, max: Infinity },
+    depth: { min: 1, max: Infinity },
+    elevation: { min: 0, max: Infinity },
+};
+let dimsToDisable = [];
 let isLocked = false;
 
 const firstDelay = 3;
