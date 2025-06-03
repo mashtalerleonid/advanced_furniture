@@ -3,6 +3,7 @@ class PlannerHelper {
         this.configurator = configurator;
 
         this.planner = new R2D.PlannerCore();
+        R2D.Viewers.enableViewer(2);
         R2D.view3d.setSize(plannerContainer.offsetWidth, plannerContainer.offsetHeight);
         this.plannerDom = this.planner.getDomElement();
         plannerContainer.appendChild(this.plannerDom);

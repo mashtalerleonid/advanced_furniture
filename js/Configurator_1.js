@@ -251,21 +251,24 @@ class Configurator_1 {
                         );
                         copyIndexes.forEach((index) => {
                             const hashCopy = this.initMaterials[index].hash;
-                            this.meshesData[hashCopy] = { geometryIndex: index };
-                            this.meshesData[hashCopy].curId =
-                                this.configInfo?.meshesData[hash]?.curId ||
-                                this.meshesData[hash].defaultId;
-                            this.meshesData[hashCopy].defaultId = this.meshesData[hash].defaultId;
-                            this.meshesData[hashCopy].childrenPos = [];
+                            this.meshesData[hashCopy] = {
+                                geometryIndex: index,
+                                curId:
+                                    this.configInfo?.meshesData[hash]?.curId ||
+                                    this.meshesData[hash].defaultId,
+                                defaultId: this.meshesData[hash].defaultId,
+                                childrenPos: [],
+                            };
                         });
                     }
                     // -----
                 } else if (!allCopyIndexes.includes(index)) {
                     //немає інфи в конфігурації і не для копіювання, тобто не буде проходити через replaceMesh
-                    this.meshesData[hash] = {};
-                    this.meshesData[hash].curId = -1;
-                    this.meshesData[hash].childrenPos = [];
-                    this.meshesData[hash].geometryIndex = index;
+                    this.meshesData[hash] = {
+                        curId: -1,
+                        childrenPos: [],
+                        geometryIndex: index,
+                    };
 
                     const mesh = this.getMeshByHash(hash);
                     const keys = Object.keys(mesh.userData);

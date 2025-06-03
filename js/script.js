@@ -41,6 +41,11 @@ function onTHREELoaded() {
     script.src = `${R2D.URL.DOMAIN}/src_designer/js/plannercore.js?v=${getRandomInt(100)}`; //для dev.roomtodo
     document.body.appendChild(script);
     script.onload = onPlannercoreLoaded;
+
+    const script2 = document.createElement("script");
+    script2.src = `${R2D.URL.DOMAIN}/src_designer/js/tris.js?v=${getRandomInt(100)}`;
+    document.body.appendChild(script2);
+
 }
 
 function onPlannercoreLoaded() {
