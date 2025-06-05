@@ -100,7 +100,7 @@ function sizeChanged(type, value) {
             break;
     }
     configurator.updateModel(curParams);
-    configurator.PH.updateCameraSettings(configurator.sceneObject, false);
+    // configurator.PH.updateCameraSettings(configurator.sceneObject, false);
     updateInputs();
 }
 

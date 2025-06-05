@@ -289,6 +289,11 @@ class Configurator_1 {
                         }
                     }
                 }
+
+                const alignmentFromConfig = this.configData.alignment?.[index];
+                if (alignmentFromConfig) {
+                    this.meshesData[hash].alignment = alignmentFromConfig;
+                }
             });
 
             allPossibleProductIds = this.configData.geometries
@@ -388,7 +393,7 @@ class Configurator_1 {
 
         this.findOwnPosNoChildren();
 
-        await this.findTransformMatrices();
+        await this.findTransformMatricesAndAlignPoints();
 
         if (this.configInfo) {
             this.applyConfigInfo();
@@ -571,6 +576,8 @@ class Configurator_1 {
                 this.setGeometryToOrigin(mesh.geometry);
                 if (meshData.transformMatrix) {
                     mesh.geometry.applyMatrix4(meshData.transformMatrix);
+                    const initAlignPoint = this.findAlignPoint(mesh.geometry, meshData.alignment);
+                    meshData.ownPos = meshData.alignPoint.clone().sub(initAlignPoint);
                 }
 
                 mesh.geometry.translate(meshData.ownPos.x, meshData.ownPos.y, meshData.ownPos.z);
@@ -818,10 +825,8 @@ class Configurator_1 {
                 geometry.computeBoundingBox();
             }
 
-            const center = new THREE.Vector3();
-            geometry.boundingBox.getCenter(center);
-
-            meshData.ownPos = { ...center };
+            meshData.ownPos = new THREE.Vector3();
+            geometry.boundingBox.getCenter(meshData.ownPos);
         }
     }
 
@@ -939,7 +944,7 @@ class Configurator_1 {
                     }
 
                     if (!parentHash) {
-                        configInfo.meshesData[hash].geomPos = ownPos;
+                        configInfo.meshesData[hash].geomPos = { ...ownPos };
                         if (!childrenPos.length) {
                             configInfo.meshesData[hash].transformMatrix = transformMatrix;
                         }
@@ -994,7 +999,7 @@ class Configurator_1 {
         return url;
     }
 
-    async findTransformMatrices() {
+    async findTransformMatricesAndAlignPoints() {
         for (const [hash, meshData] of Object.entries(this.meshesData)) {
             if (meshData.curId == -1) continue;
 
@@ -1005,8 +1010,10 @@ class Configurator_1 {
             if (!finalGeom) continue;
 
             const transformMatrix = this.findTransformMatrix(initGeom, finalGeom);
+            const alignPoint = this.findAlignPoint(finalGeom, meshData.alignment);
             if (transformMatrix) {
                 meshData.transformMatrix = transformMatrix;
+                meshData.alignPoint = alignPoint;
             }
         }
     }
@@ -1053,99 +1060,138 @@ class Configurator_1 {
         const nonIndexedInitGeom = initGeom.toNonIndexed();
         const nonIndexedFinalGeom = finalGeom.toNonIndexed();
 
-        return findRotationBetweenGeometries(nonIndexedInitGeom, nonIndexedFinalGeom);
-    }
-}
-
-function findRotationBetweenGeometries(initialGeometry, finalGeometry) {
-    const posA = initialGeometry.attributes.position;
-    const posB = finalGeometry.attributes.position;
-
-    if (posA.count !== posB.count) {
-        throw new Error("Geometries must have the same number of vertices");
+        return this.findRotationBetweenGeometries(nonIndexedInitGeom, nonIndexedFinalGeom);
     }
 
-    // Compute centroids
-    const centroidA = new THREE.Vector3();
-    const centroidB = new THREE.Vector3();
-    for (let i = 0; i < posA.count; i++) {
-        centroidA.add(new THREE.Vector3().fromBufferAttribute(posA, i));
-        centroidB.add(new THREE.Vector3().fromBufferAttribute(posB, i));
-    }
-    centroidA.divideScalar(posA.count);
-    centroidB.divideScalar(posB.count);
+    findRotationBetweenGeometries(initialGeometry, finalGeometry) {
+        const posA = initialGeometry.attributes.position;
+        const posB = finalGeometry.attributes.position;
 
-    // Assemble corresponding points arrays (centered)
-    const pointsA = [];
-    const pointsB = [];
-    for (let i = 0; i < posA.count; i++) {
-        pointsA.push(new THREE.Vector3().fromBufferAttribute(posA, i).sub(centroidA));
-        pointsB.push(new THREE.Vector3().fromBufferAttribute(posB, i).sub(centroidB));
-    }
-
-    // Kabsch algorithm
-    // Compute covariance matrix H (zero-initialize!)
-    let H = [
-        [0, 0, 0],
-        [0, 0, 0],
-        [0, 0, 0],
-    ];
-    for (let i = 0; i < pointsA.length; i++) {
-        const a = pointsA[i];
-        const b = pointsB[i];
-        H[0][0] += a.x * b.x;
-        H[0][1] += a.x * b.y;
-        H[0][2] += a.x * b.z;
-        H[1][0] += a.y * b.x;
-        H[1][1] += a.y * b.y;
-        H[1][2] += a.y * b.z;
-        H[2][0] += a.z * b.x;
-        H[2][1] += a.z * b.y;
-        H[2][2] += a.z * b.z;
-    }
-
-    // SVD decomposition of H
-    let U, S, V;
-    if (typeof numeric !== "undefined" && numeric.svd) {
-        const svd = numeric.svd(H);
-        // U, S, V are arrays from numeric.js
-        U = svd.U;
-        V = svd.V;
-        // Compute R = V * U^T
-        // numeric.js provides transpose and dot
-        let UT = numeric.transpose(U);
-        let R = numeric.dot(V, UT);
-
-        // If det(R) < 0, fix improper rotation (reflection)
-        if (numeric.det(R) < 0) {
-            V[2][0] *= -1;
-            V[2][1] *= -1;
-            V[2][2] *= -1;
-            R = numeric.dot(V, UT);
+        if (posA.count !== posB.count) {
+            throw new Error("Geometries must have the same number of vertices");
         }
 
-        // Convert R (3x3) to THREE.Matrix4
-        const rotMat4 = new THREE.Matrix4().set(
-            R[0][0],
-            R[0][1],
-            R[0][2],
-            0,
-            R[1][0],
-            R[1][1],
-            R[1][2],
-            0,
-            R[2][0],
-            R[2][1],
-            R[2][2],
-            0,
-            0,
-            0,
-            0,
-            1
-        );
+        // Compute centroids
+        const centroidA = new THREE.Vector3();
+        const centroidB = new THREE.Vector3();
+        for (let i = 0; i < posA.count; i++) {
+            centroidA.add(new THREE.Vector3().fromBufferAttribute(posA, i));
+            centroidB.add(new THREE.Vector3().fromBufferAttribute(posB, i));
+        }
+        centroidA.divideScalar(posA.count);
+        centroidB.divideScalar(posB.count);
 
-        return rotMat4;
-    } else {
-        return null;
+        // Assemble corresponding points arrays (centered)
+        const pointsA = [];
+        const pointsB = [];
+        for (let i = 0; i < posA.count; i++) {
+            pointsA.push(new THREE.Vector3().fromBufferAttribute(posA, i).sub(centroidA));
+            pointsB.push(new THREE.Vector3().fromBufferAttribute(posB, i).sub(centroidB));
+        }
+
+        // Kabsch algorithm
+        // Compute covariance matrix H (zero-initialize!)
+        let H = [
+            [0, 0, 0],
+            [0, 0, 0],
+            [0, 0, 0],
+        ];
+        for (let i = 0; i < pointsA.length; i++) {
+            const a = pointsA[i];
+            const b = pointsB[i];
+            H[0][0] += a.x * b.x;
+            H[0][1] += a.x * b.y;
+            H[0][2] += a.x * b.z;
+            H[1][0] += a.y * b.x;
+            H[1][1] += a.y * b.y;
+            H[1][2] += a.y * b.z;
+            H[2][0] += a.z * b.x;
+            H[2][1] += a.z * b.y;
+            H[2][2] += a.z * b.z;
+        }
+
+        // SVD decomposition of H
+        let U, S, V;
+        if (typeof numeric !== "undefined" && numeric.svd) {
+            const svd = numeric.svd(H);
+            // U, S, V are arrays from numeric.js
+            U = svd.U;
+            V = svd.V;
+            // Compute R = V * U^T
+            // numeric.js provides transpose and dot
+            let UT = numeric.transpose(U);
+            let R = numeric.dot(V, UT);
+
+            // If det(R) < 0, fix improper rotation (reflection)
+            if (numeric.det(R) < 0) {
+                V[2][0] *= -1;
+                V[2][1] *= -1;
+                V[2][2] *= -1;
+                R = numeric.dot(V, UT);
+            }
+
+            // Convert R (3x3) to THREE.Matrix4
+            const rotMat4 = new THREE.Matrix4().set(
+                R[0][0],
+                R[0][1],
+                R[0][2],
+                0,
+                R[1][0],
+                R[1][1],
+                R[1][2],
+                0,
+                R[2][0],
+                R[2][1],
+                R[2][2],
+                0,
+                0,
+                0,
+                0,
+                1
+            );
+
+            return rotMat4;
+        } else {
+            return null;
+        }
+    }
+
+    findAlignPoint(geom, align) {
+        if (!geom.boundingBox) {
+            geom.computeBoundingBox();
+        }
+        const bbox = geom.boundingBox;
+        const alignPoint = new THREE.Vector3();
+        bbox.getCenter(alignPoint);
+
+        if (!align) {
+            return alignPoint;
+        }
+
+        if (align.x === "left") {
+            alignPoint.x = bbox.min.x;
+        } else if (align.x === "right") {
+            alignPoint.x = bbox.max.x;
+        } else if (align.x === "center") {
+            // alignPoint.x is already the center
+        }
+
+        if (align.y === "top") {
+            alignPoint.y = bbox.max.y;
+        } else if (align.y === "bottom") {
+            alignPoint.y = bbox.min.y;
+        } else if (align.y === "center") {
+            // alignPoint.y is already the center
+        }
+
+        if (align.z === "back") {
+            alignPoint.z = bbox.min.z;
+        } else if (align.z === "front") {
+            alignPoint.z = bbox.max.z;
+        } else if (align.z === "center") {
+            // alignPoint.z is already the center
+        }
+
+        return alignPoint;
     }
 }
