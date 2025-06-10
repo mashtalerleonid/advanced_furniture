@@ -8,7 +8,7 @@ class Configurator_1 {
     }
 
     initializeProperties() {
-        this.configId = "1";
+        this.configId = "advancedfurniture";
         this.configType = "";
         this.modelData = null;
         this.meshesData = {};
@@ -29,11 +29,11 @@ class Configurator_1 {
         this.initMaterials = [];
         this.objectViewer3D = null;
         this.protector = 0;
+        this.mapTagToProductIds = {};
     }
 
     setupListeners(R2D) {
         this.productsDataLoader = new R2D.ProductsDataLoader();
-        this.initProductDataLoadedListener = this.onInitProductDataLoaded.bind(this);
         this.init3DLoadedListener = this.onInit3DLoaded.bind(this);
         this.forReplace3DLoadedListener = this.forReplace3DLoaded.bind(this);
     }
@@ -203,6 +203,43 @@ class Configurator_1 {
         wrapSVG.classList.add("lockDisabled");
     }
 
+    async createMapTagToId() {
+        const tagsArr = [];
+        this.configData.model.modelsForReplace.forEach((model) => {
+            if (model.tag != "0" && !tagsArr.includes(model.tag)) {
+                tagsArr.push(model.tag);
+            }
+        });
+        this.configData.geometries.forEach((data) => {
+            if (data.modelsForReplace) {
+                data.modelsForReplace.forEach((model) => {
+                    if (model.tag != "0" && !tagsArr.includes(model.tag)) {
+                        tagsArr.push(model.tag);
+                    }
+                });
+                if (!tagsArr.includes(data.defaultTag)) {
+                    tagsArr.push(data.defaultTag);
+                }
+            }
+        });
+        this.mapTagToProductIds = await R2D.Pool.loadProductDataByTagsArr(tagsArr);
+    }
+
+    addProductIds() {
+        this.configData.model.modelsForReplace.forEach((model) => {
+            model.id = this.mapTagToProductIds[model.tag][0];
+        });
+
+        this.configData.geometries.forEach((data) => {
+            if (data.modelsForReplace) {
+                data.defaultId = this.mapTagToProductIds[data.defaultTag][0];
+                data.modelsForReplace.forEach((model) => {
+                    model.id = model.tag == "0" ? "0" : this.mapTagToProductIds[model.tag][0];
+                });
+            }
+        });
+    }
+
     async startConfigurate(modelId) {
         this.configData = await this.getConfigData(modelId);
         if (!this.configData) {
@@ -212,10 +249,12 @@ class Configurator_1 {
 
         this.updateDimLimits();
 
+        await this.createMapTagToId();
+
+        this.addProductIds();
+
         this.initMaterials = this.sceneObject.getMaterialsObjects().map((mo) => ({ ...mo }));
         this.configType = this.findConfigType();
-
-        let allPossibleProductIds = [];
 
         if (this.configType === "meshReplace") {
             // заміна мешей
@@ -296,13 +335,6 @@ class Configurator_1 {
                 }
             });
 
-            allPossibleProductIds = this.configData.geometries
-                .flatMap((data) => {
-                    const res = data.modelsForReplace.map((data) => data.id);
-                    return res.length ? res : data.defaultId;
-                })
-                .filter((id) => id != 0);
-
             this.idsForLoad = Object.values(this.meshesData)
                 .map((meshData) => meshData.curId)
                 .filter((id) => id != 0 && id != -1);
@@ -327,43 +359,7 @@ class Configurator_1 {
             }
 
             this.sceneObject.update();
-
-            allPossibleProductIds = this.modelData.modelsForReplace.map((data) => data.id);
         }
-
-        this.productsDataLoader.addEventListener(
-            Event.COMPLETE,
-            this.initProductDataLoadedListener
-        );
-
-        this.productsDataLoader.load(allPossibleProductIds);
-    }
-
-    async getConfigData(modelId) {
-        const objectData =
-            R2D.Pool.getProductData(modelId) || (await this.loadProductData(modelId));
-        const metaZipSrc = `${R2D.URL.DOMAIN}${objectData.source.body.metaZip}`;
-
-        const response = await fetch(metaZipSrc);
-        const data = await response.blob();
-        const zip = await JSZip.loadAsync(data);
-        const json = await zip.files["main.json"].async("string");
-
-        let obj = null;
-        try {
-            obj = JSON.parse(json);
-        } catch (error) {
-            console.log(error);
-        }
-
-        return obj;
-    }
-
-    onInitProductDataLoaded() {
-        this.productsDataLoader.removeEventListener(
-            Event.COMPLETE,
-            this.initProductDataLoadedListener
-        );
 
         if (this.idsForLoad.length) {
             R2D.Pool3D.addEventListener(Event.FINISH, this.init3DLoadedListener);
@@ -374,6 +370,31 @@ class Configurator_1 {
         } else {
             this.dispatchEvent(new Event("renderSettingsContainer"));
         }
+    }
+
+    async getConfigData(modelId) {
+        // const objectData =
+        //     R2D.Pool.getProductData(modelId) || (await this.loadProductData(modelId));
+        // const metaZipSrc = `${R2D.URL.DOMAIN}${objectData.source.body.metaZip}`;
+        // const response = await fetch(metaZipSrc);
+        // const data = await response.blob();
+        // const zip = await JSZip.loadAsync(data);
+        // const json = await zip.files["main.json"].async("string");
+        // let obj = null;
+        // try {
+        //     obj = JSON.parse(json);
+        // } catch (error) {
+        //     console.log(error);
+        // }
+        // return obj;
+
+        const objectData =
+            R2D.Pool.getProductData(modelId) || (await this.loadProductData(modelId));
+        console.log("objectData", objectData);
+
+        const metadata = objectData.metadata[this.configId]?.data;
+        console.log("metadata", metadata);
+        return metadata;
     }
 
     async onInit3DLoaded(e) {
