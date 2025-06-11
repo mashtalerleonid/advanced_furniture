@@ -135,7 +135,7 @@ class PlannerHelper {
 
             materials.forEach((material) => {
                 const id = material.addMaterial || material.default;
-                this.materialsOnModelMap.set(id, true);
+                if (id != 0) this.materialsOnModelMap.set(id, true);
             });
 
             this.configurator.objectViewer3D =
