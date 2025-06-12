@@ -136,6 +136,13 @@ class Configurator_1 {
         return `${R2D.URL.DOMAIN}${productData.source.images.preview}`;
     }
 
+    getModelName(id) {
+        const productData = R2D.Pool.getProductData(id);
+        if (!productData) return null;
+
+        return productData.name;
+    }
+
     start(modelId, configInfo) {
         this.startModelId = modelId;
         const idToPlace =

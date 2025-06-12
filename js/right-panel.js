@@ -323,7 +323,9 @@ async function renderSettingsContainer(side = "to-left") {
     slide({
         elHide: colorpickerContEl.parentElement ? colorpickerContEl : materialsListEl,
         elShow: settingsContainerEl,
-        navTitle: configurator.configData.model.title,
+        navTitle:
+            configurator.configData.model.title ||
+            configurator.getModelName(configurator.startModelId),
         side: side,
         isBackBtn: false,
     });
@@ -356,6 +358,7 @@ async function renderSettingsContainer(side = "to-left") {
         let markup = data.modelsForReplace
             .map((itemData) => {
                 const src = configurator.getPrevSrc(itemData.id);
+                const modelName = configurator.getModelName(itemData.id);
 
                 return src
                     ? `<div class="subprop__item" data-id="${itemData.id}" data-hash="${hash}">
@@ -364,7 +367,7 @@ async function renderSettingsContainer(side = "to-left") {
                         </div>
                         <div class="subprop__item__descr">
                             <div class="subprop__item__title">
-                                ${itemData.title}
+                                ${itemData.title || modelName || ""}
                             </div>
                             <div class="subprop__item__text">${itemData.text}</div>
                         </div>
@@ -372,7 +375,7 @@ async function renderSettingsContainer(side = "to-left") {
                     : `<div class="subprop__item" data-id="${itemData.id}" data-hash="${hash}">
                         <div class="subprop__item__descr">
                             <div class="subprop__item__title">
-                                ${itemData.title}
+                                ${itemData.title  || modelName || ""}
                             </div>
                             <div class="subprop__item__text">${itemData.text}</div>
                         </div>
