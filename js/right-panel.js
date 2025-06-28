@@ -44,6 +44,7 @@ closeBtn.addEventListener("click", () => {
 
 applyBtn.addEventListener("click", () => {
     configurator.insertToPlanner();
+    configurator.close();
 });
 
 copyBtn.addEventListener("click", () => {
