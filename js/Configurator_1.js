@@ -354,6 +354,11 @@ class Configurator_1 {
                     this.PH.configurateParametric();
                 }
             }
+
+            if (this.configInfo) {
+                this.sceneObject.setMaterialsObjects(this.configInfo.materials);
+                this.sceneObject.update();
+            }
         } else if (this.configType === "modelReplace") {
             // заміна моделей
             this.modelData = this.configData.model;
@@ -380,21 +385,6 @@ class Configurator_1 {
     }
 
     async getConfigData(modelId) {
-        // const objectData =
-        //     R2D.Pool.getProductData(modelId) || (await this.loadProductData(modelId));
-        // const metaZipSrc = `${R2D.URL.DOMAIN}${objectData.source.body.metaZip}`;
-        // const response = await fetch(metaZipSrc);
-        // const data = await response.blob();
-        // const zip = await JSZip.loadAsync(data);
-        // const json = await zip.files["main.json"].async("string");
-        // let obj = null;
-        // try {
-        //     obj = JSON.parse(json);
-        // } catch (error) {
-        //     console.log(error);
-        // }
-        // return obj;
-
         const objectData =
             R2D.Pool.getProductData(modelId) || (await this.loadProductData(modelId));
 
@@ -907,8 +897,6 @@ class Configurator_1 {
             }),
             "*"
         );
-
-        this.PH.disposeRenderers();
     }
 
     close() {
