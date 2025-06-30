@@ -178,7 +178,8 @@ class Configurator_1 {
         };
 
         this.configInfo =
-            configInfo && Object.keys(configInfo).some((key) => key !== "params")
+            configInfo &&
+            Object.keys(configInfo).some((key) => key !== "params" && key !== "materials")
                 ? configInfo
                 : null;
         if (this.configInfo) this.sceneObject.configInfo = configInfo;
