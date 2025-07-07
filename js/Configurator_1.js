@@ -373,6 +373,7 @@ class Configurator_1 {
     async getConfigData(modelId) {
         const objectData =
             R2D.Pool.getProductData(modelId) || (await this.loadProductData(modelId));
+        if (!objectData.metadata) return null;
 
         const metadata =
             objectData.metadata[this.configId]?.data || objectData.metadata.commonapp?.data;
